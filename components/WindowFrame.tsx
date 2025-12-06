@@ -74,8 +74,9 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     <div
       ref={windowRef}
       style={{ ...style, zIndex: windowState.zIndex }}
-      className={`absolute flex flex-col rounded-lg shadow-2xl overflow-hidden transition-all duration-300 ease-in-out ${
-        isDragging ? 'shadow-cyan-500/10 cursor-grabbing' : ''
+      className={`absolute flex flex-col rounded-lg shadow-2xl overflow-hidden ${
+        // Disable transitions when dragging for instant response, enable otherwise for smooth maximize
+        isDragging ? 'transition-none cursor-grabbing' : 'transition-all duration-300 ease-in-out'
       } ${
         isActive 
           ? 'bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 shadow-black/50' 

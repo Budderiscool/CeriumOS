@@ -28,6 +28,7 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>(INITIAL_SETTINGS);
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [files, setFiles] = useState<Record<string, FileSystemItem>>(INITIAL_FILES);
+  const [pinnedAppIds, setPinnedAppIds] = useState<string[]>(['browser', 'files', 'settings']);
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
   const [nextZIndex, setNextZIndex] = useState(10);
 
@@ -70,10 +71,16 @@ export default function App() {
   };
 
   const openFile = (file: FileSystemItem) => {
-    if (file.type === 'text') {
+    if (file.type === 'app' && file.content) {
+      launchApp(file.content);
+    } else if (file.type === 'text') {
       launchApp('text-editor', file.content);
     } else if (file.type === 'image') {
       launchApp('image-viewer', file.content);
+    } else if (file.type === 'folder') {
+       // Folders on desktop usually open Files app at that path. 
+       // For simplicity, just launch Files app. In full OS, pass path.
+       launchApp('files');
     } else {
       // Default to text editor
       launchApp('text-editor', `Cannot open binary file: ${file.name}`);
@@ -130,6 +137,21 @@ export default function App() {
     ));
   };
 
+  // Taskbar Pinning
+  const pinApp = (appId: string) => {
+    if (!pinnedAppIds.includes(appId)) {
+        setPinnedAppIds([...pinnedAppIds, appId]);
+    }
+  };
+
+  const unpinApp = (appId: string) => {
+    setPinnedAppIds(pinnedAppIds.filter(id => id !== appId));
+  };
+
+  const reorderPinnedApps = (newOrder: string[]) => {
+    setPinnedAppIds(newOrder);
+  };
+
   if (!isLoggedIn) {
     return <LoginScreen settings={settings} onLogin={handleLogin} />;
   }
@@ -140,7 +162,7 @@ export default function App() {
       style={{ backgroundImage: `url(${settings.wallpaper})` }}
     >
       {/* Desktop Icons */}
-      <Desktop files={files} onOpenFile={openFile} />
+      <Desktop files={files} apps={APPS} onOpenFile={openFile} />
 
       {/* Window Layer */}
       <div className="absolute inset-0 pb-12 pointer-events-none">
@@ -176,10 +198,14 @@ export default function App() {
         apps={APPS}
         openWindows={windows}
         activeWindowId={activeWindowId}
+        pinnedAppIds={pinnedAppIds}
         onLaunch={launchApp}
         onFocus={focusWindow}
         onToggleMinimize={toggleMinimize}
         onLogout={() => setIsLoggedIn(false)}
+        onPinApp={pinApp}
+        onUnpinApp={unpinApp}
+        onReorderPinnedApps={reorderPinnedApps}
       />
     </div>
   );

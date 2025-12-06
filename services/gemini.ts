@@ -1,7 +1,18 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
-// Initialize the client strictly according to guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safely retrieve API key to prevent "process is not defined" crashes in browser environments
+const getApiKey = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  return '';
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export const generateResponse = async (
   prompt: string,

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { FileSystemItem } from '../types';
+import { FileSystemItem, AppDefinition } from '../types';
 import { FileText, Folder, Image, File } from 'lucide-react';
 
 interface DesktopProps {
   files: Record<string, FileSystemItem>;
+  apps: AppDefinition[];
   onOpenFile: (file: FileSystemItem) => void;
 }
 
-export const Desktop: React.FC<DesktopProps> = ({ files, onOpenFile }) => {
+export const Desktop: React.FC<DesktopProps> = ({ files, apps, onOpenFile }) => {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragState, setDragState] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -20,7 +21,10 @@ export const Desktop: React.FC<DesktopProps> = ({ files, onOpenFile }) => {
     const newPositions = { ...positions };
     desktopItems.forEach((item, index) => {
       if (!newPositions[item.id]) {
-        newPositions[item.id] = { x: 20, y: 20 + (index * 100) };
+        // Simple grid layout
+        const col = Math.floor(index / 6);
+        const row = index % 6;
+        newPositions[item.id] = { x: 20 + (col * 100), y: 20 + (row * 100) };
       }
     });
     setPositions(newPositions);
@@ -65,8 +69,17 @@ export const Desktop: React.FC<DesktopProps> = ({ files, onOpenFile }) => {
     };
   }, [dragState]);
 
-  const getIcon = (type: string) => {
-    switch(type) {
+  const getIcon = (item: FileSystemItem) => {
+    if (item.type === 'app' && item.content) {
+      const app = apps.find(a => a.id === item.content);
+      if (app) {
+        // Return the app icon component instantiated
+        const Icon = app.icon;
+        return <Icon size={40} className="text-cyan-400" />;
+      }
+    }
+
+    switch(item.type) {
       case 'folder': return <Folder size={40} className="text-blue-400 fill-blue-400/20" />;
       case 'image': return <Image size={40} className="text-purple-400" />;
       case 'text': return <FileText size={40} className="text-slate-300" />;
@@ -98,7 +111,7 @@ export const Desktop: React.FC<DesktopProps> = ({ files, onOpenFile }) => {
             `}
           >
             <div className="mb-1 drop-shadow-md">
-              {getIcon(item.type)}
+              {getIcon(item)}
             </div>
             <span className={`text-xs text-center font-medium leading-tight text-white drop-shadow-md line-clamp-2 ${isSelected ? '' : 'bg-black/20 rounded px-1'}`}>
               {item.name}

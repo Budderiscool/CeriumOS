@@ -34,7 +34,7 @@ export interface WindowState {
 export interface FileSystemItem {
   id: string;
   name: string;
-  type: 'folder' | 'file' | 'image' | 'text';
+  type: 'folder' | 'file' | 'image' | 'text' | 'app';
   content?: string;
   parentId: string | null;
   children?: string[]; // IDs of children
