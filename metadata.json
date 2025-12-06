@@ -1,0 +1,5 @@
+{
+  "name": "Cerium OS",
+  "description": "A modern, web-based operating system simulation built with React and Tailwind CSS. Features a window manager, file explorer, browser, and AI-powered assistant.",
+  "requestFramePermissions": []
+}
