@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppDefinition, WindowState } from '../types';
-import { Circle, Power, Wifi, Volume2, Battery, Pin, Trash, X } from 'lucide-react';
+import { Circle, Power, Wifi, Volume2, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, Pin, X, ChevronLeft, ChevronRight, Cloud, Sun, CloudRain, CloudSnow, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 
 interface TaskbarProps {
   apps: AppDefinition[];
@@ -15,6 +15,58 @@ interface TaskbarProps {
   onUnpinApp: (appId: string) => void;
   onReorderPinnedApps: (newOrder: string[]) => void;
 }
+
+const MiniCalendar = () => {
+  const [date, setDate] = useState(new Date());
+
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+
+  const prevMonth = () => setDate(new Date(date.getFullYear(), date.getMonth() - 1, 1));
+  const nextMonth = () => setDate(new Date(date.getFullYear(), date.getMonth() + 1, 1));
+
+  const today = new Date();
+  const isToday = (d: number) => 
+    d === today.getDate() && 
+    date.getMonth() === today.getMonth() && 
+    date.getFullYear() === today.getFullYear();
+
+  const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+  return (
+    <div className="p-4 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl text-slate-200">
+      <div className="flex items-center justify-between mb-4">
+        <span className="font-medium pl-1">
+          {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </span>
+        <div className="flex gap-1">
+          <button onClick={prevMonth} className="p-1 hover:bg-slate-800 rounded-md transition-colors"><ChevronLeft size={16} /></button>
+          <button onClick={nextMonth} className="p-1 hover:bg-slate-800 rounded-md transition-colors"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2">
+        {days.map(d => <div key={d} className="text-slate-500 font-medium">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-sm">
+        {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`empty-${i}`} />)}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const d = i + 1;
+          return (
+            <div 
+              key={d} 
+              className={`
+                h-8 flex items-center justify-center rounded-md cursor-default
+                ${isToday(d) ? 'bg-cyan-600 text-white font-bold' : 'hover:bg-slate-800 text-slate-300'}
+              `}
+            >
+              {d}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export const Taskbar: React.FC<TaskbarProps> = ({
   apps,
@@ -31,23 +83,86 @@ export const Taskbar: React.FC<TaskbarProps> = ({
 }) => {
   const [time, setTime] = useState(new Date());
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; appId: string; isPinned: boolean } | null>(null);
   const [draggingAppId, setDraggingAppId] = useState<string | null>(null);
+  
+  // Widget States
+  const [battery, setBattery] = useState<{ level: number; charging: boolean } | null>(null);
+  const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Close context menu on click elsewhere
+  // Battery API
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
+    const nav = navigator as any;
+    if (nav.getBattery) {
+      nav.getBattery().then((batt: any) => {
+        const updateBattery = () => {
+          setBattery({
+            level: batt.level,
+            charging: batt.charging
+          });
+        };
+        updateBattery();
+        batt.addEventListener('levelchange', updateBattery);
+        batt.addEventListener('chargingchange', updateBattery);
+      });
+    } else {
+      // Fallback
+      setBattery({ level: 1, charging: false });
+    }
+  }, []);
+
+  // Weather API (Open-Meteo)
+  useEffect(() => {
+    const fetchWeather = async (lat: number, lon: number) => {
+      try {
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`);
+        const data = await res.json();
+        const code = data.current.weather_code;
+        let condition = 'Sun';
+        if (code > 0 && code <= 3) condition = 'Cloud';
+        if (code >= 45) condition = 'Cloud';
+        if (code >= 51) condition = 'Rain';
+        if (code >= 71) condition = 'Snow';
+        
+        setWeather({
+          temp: Math.round(data.current.temperature_2m),
+          condition
+        });
+      } catch (e) {
+        setWeather({ temp: 20, condition: 'Sun' });
+      }
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        () => setWeather({ temp: 20, condition: 'Sun' })
+      );
+    } else {
+      setWeather({ temp: 20, condition: 'Sun' });
+    }
+  }, []);
+
+  // Close menus on click elsewhere
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest('.taskbar-calendar-trigger') && !target.closest('.calendar-popup')) {
+            setCalendarOpen(false);
+        }
+        setContextMenu(null);
+    };
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
   const handleAppClick = (appId: string) => {
-    // If app has open windows, toggle the most recent one
     const appWindows = openWindows.filter(w => w.appId === appId);
     if (appWindows.length > 0) {
       const lastActive = appWindows[appWindows.length - 1];
@@ -83,7 +198,7 @@ export const Taskbar: React.FC<TaskbarProps> = ({
   const handleDragOver = (e: React.DragEvent, targetAppId: string) => {
     e.preventDefault();
     if (!draggingAppId || draggingAppId === targetAppId) return;
-    if (!pinnedAppIds.includes(targetAppId)) return; // Only reorder pinned items
+    if (!pinnedAppIds.includes(targetAppId)) return;
 
     const currentIndex = pinnedAppIds.indexOf(draggingAppId);
     const targetIndex = pinnedAppIds.indexOf(targetAppId);
@@ -96,13 +211,30 @@ export const Taskbar: React.FC<TaskbarProps> = ({
     }
   };
 
-  // Combine pinned apps and unpinned-but-open apps
   const runningUnpinnedIds = openWindows
     .map(w => w.appId)
     .filter(id => !pinnedAppIds.includes(id))
-    .filter((value, index, self) => self.indexOf(value) === index); // Unique
+    .filter((value, index, self) => self.indexOf(value) === index);
 
   const displayAppIds = [...pinnedAppIds, ...runningUnpinnedIds];
+
+  const getWeatherIcon = () => {
+    if (!weather) return <Sun size={16} />;
+    switch(weather.condition) {
+      case 'Rain': return <CloudRain size={16} />;
+      case 'Snow': return <CloudSnow size={16} />;
+      case 'Cloud': return <Cloud size={16} />;
+      default: return <Sun size={16} />;
+    }
+  };
+
+  const getBatteryIcon = () => {
+    if (!battery) return <Battery size={16} />;
+    if (battery.charging) return <BatteryCharging size={16} />;
+    if (battery.level > 0.9) return <BatteryFull size={16} />;
+    if (battery.level > 0.3) return <BatteryMedium size={16} />;
+    return <BatteryLow size={16} className="text-red-400" />;
+  };
 
   return (
     <>
@@ -151,6 +283,16 @@ export const Taskbar: React.FC<TaskbarProps> = ({
         </div>
       )}
 
+      {/* Calendar Popup */}
+      {calendarOpen && (
+        <div 
+          className="calendar-popup absolute bottom-14 right-2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MiniCalendar />
+        </div>
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <div 
@@ -181,7 +323,7 @@ export const Taskbar: React.FC<TaskbarProps> = ({
         <div className="flex items-center gap-2 h-full">
           {/* Start Button */}
           <button 
-            onClick={() => setStartMenuOpen(!startMenuOpen)}
+            onClick={(e) => { e.stopPropagation(); setStartMenuOpen(!startMenuOpen); }}
             className={`p-2 rounded-lg transition-all duration-300 ${startMenuOpen ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-slate-800 text-slate-300'}`}
           >
             <Circle size={20} className={startMenuOpen ? "fill-cyan-500/20" : ""} />
@@ -231,22 +373,43 @@ export const Taskbar: React.FC<TaskbarProps> = ({
         </div>
 
         {/* System Tray */}
-        <div className="flex items-center gap-4 px-2 h-full">
-            <div className="flex items-center gap-3 text-slate-400">
-                <Wifi size={16} />
-                <Volume2 size={16} />
-                <Battery size={16} />
+        <div className="flex items-center gap-3 px-2 h-full">
+            {/* Weather */}
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 hover:bg-slate-800 rounded-md transition-colors cursor-default text-slate-300" title={weather?.condition}>
+               {getWeatherIcon()}
+               <span className="text-xs font-medium">{weather ? `${weather.temp}°` : '--'}</span>
             </div>
-            <div className="flex flex-col items-end justify-center text-xs text-slate-300 leading-tight border-l border-slate-800 pl-4 h-8">
+
+            {/* Icons Group */}
+            <div className="flex items-center gap-3 text-slate-400 px-2">
+                <Wifi size={16} className="cursor-pointer hover:text-white transition-colors" />
+                <Volume2 size={16} className="cursor-pointer hover:text-white transition-colors" />
+                
+                {/* Battery with hover percentage */}
+                <div className="relative group cursor-default flex items-center gap-1">
+                    {getBatteryIcon()}
+                    {battery && (
+                        <span className="text-xs group-hover:block hidden absolute bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 px-2 py-1 rounded shadow-lg whitespace-nowrap">
+                            {Math.round(battery.level * 100)}% {battery.charging ? '(Charging)' : ''}
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            {/* Clock / Calendar Trigger */}
+            <button 
+              className="taskbar-calendar-trigger flex flex-col items-end justify-center text-xs text-slate-300 leading-tight border-l border-slate-800 pl-3 h-8 hover:bg-slate-800/50 rounded px-1 transition-colors"
+              onClick={(e) => { e.stopPropagation(); setCalendarOpen(!calendarOpen); }}
+            >
                 <span className="font-medium">{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 <span className="text-slate-500">{time.toLocaleDateString()}</span>
-            </div>
+            </button>
         </div>
       </div>
       
-      {/* Close start menu when clicking outside */}
-      {startMenuOpen && (
-        <div className="fixed inset-0 z-40" onClick={() => setStartMenuOpen(false)} />
+      {/* Close menus when clicking outside (handled by useEffect) */}
+      {(startMenuOpen || calendarOpen) && (
+        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => { setStartMenuOpen(false); setCalendarOpen(false); }} />
       )}
     </>
   );
