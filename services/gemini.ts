@@ -3,7 +3,7 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 // Safely retrieve API key to prevent "process is not defined" crashes in browser environments
 const getApiKey = () => {
   // Use the API key provided by the user
-  return 'AIzaSyAliALlvuEmsFXAOrwThTMXGeoot20crjk';
+  return 'test';
 };
 
 const ai = new GoogleGenAI({ apiKey: getApiKey() });
