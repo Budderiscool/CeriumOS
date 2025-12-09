@@ -14,7 +14,7 @@ export const generateResponse = async (
         const apiKey = process.env.API_KEY;
         
         if (!apiKey) {
-            return "Configuration Error: API_KEY is missing from environment variables. Please add 'API_KEY' to your Vercel project settings and ensure it is exposed to the client.";
+            return "Configuration Error";
         }
         ai = new GoogleGenAI({ apiKey });
     }
@@ -37,6 +37,6 @@ export const generateResponse = async (
     return result.text || "I'm sorry, I couldn't generate a response.";
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return `AI Service Error: ${error.message || 'Connection failed'}. Please check your API Key and network.`;
+    return `AI Service Error: ${error.message || 'Connection failed'}. Please check your network.`;
   }
 };
