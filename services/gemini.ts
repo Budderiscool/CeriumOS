@@ -1,12 +1,24 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let ai: GoogleGenAI | null = null;
 
 export const generateResponse = async (
   prompt: string,
   history: { role: 'user' | 'model'; content: string }[] = []
 ): Promise<string> => {
   try {
+    // Lazy initialization to prevent app crash on load if key is missing/invalid
+    if (!ai) {
+        // Safe access to process.env.API_KEY. 
+        // Note: The process polyfill in index.html ensures this line doesn't throw ReferenceError.
+        const apiKey = process.env.API_KEY;
+        
+        if (!apiKey) {
+            return "Configuration Error: API_KEY is missing from environment variables. Please add 'API_KEY' to your Vercel project settings and ensure it is exposed to the client.";
+        }
+        ai = new GoogleGenAI({ apiKey });
+    }
+
     const model = 'gemini-2.5-flash';
     
     // Construct chat history for context
@@ -23,8 +35,8 @@ export const generateResponse = async (
 
     const result: GenerateContentResponse = await chat.sendMessage({ message: prompt });
     return result.text || "I'm sorry, I couldn't generate a response.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return "I encountered an error connecting to the AI service. Please check your network or API key.";
+    return `AI Service Error: ${error.message || 'Connection failed'}. Please check your API Key and network.`;
   }
 };
