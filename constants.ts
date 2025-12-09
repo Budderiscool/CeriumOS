@@ -1,4 +1,4 @@
-import { FileSystemItem, Wallpaper } from './types';
+import { FileSystemItem, Wallpaper, UserSettings } from './types';
 
 export const INITIAL_FILES: Record<string, FileSystemItem> = {
   'root': { id: 'root', name: 'Root', type: 'folder', parentId: null, children: ['desktop', 'documents', 'pictures'], createdAt: '2024-01-01' },
@@ -17,8 +17,17 @@ export const INITIAL_FILES: Record<string, FileSystemItem> = {
   'img1': { id: 'img1', name: 'Mountain.jpg', type: 'image', parentId: 'pictures', content: Wallpaper.MOUNTAIN, createdAt: '2024-01-04' },
 };
 
-export const INITIAL_SETTINGS = {
+export const INITIAL_SETTINGS: UserSettings = {
   username: 'User',
   themeColor: 'cyan',
   wallpaper: Wallpaper.ABSTRACT,
+  password: 'password',
+  bio: 'Just a Cerium OS user.',
+  brightness: 100,
+  volume: 75,
+  wifiEnabled: true,
+  bluetoothEnabled: true,
+  privacyLocation: false,
+  privacyCamera: false,
+  darkMode: true,
 };

@@ -1,10 +1,17 @@
-import { ReactNode } from 'react';
+import React, { ReactNode } from 'react';
+
+export interface FileSystemContextType {
+  createItem: (parentId: string, name: string, type: 'folder' | 'file' | 'image' | 'text' | 'app', content?: string) => void;
+  deleteItem: (id: string) => void;
+  renameItem: (id: string, newName: string) => void;
+}
 
 export interface AppProps {
   initialContent?: string;
   settings?: UserSettings;
   updateSettings?: (newSettings: Partial<UserSettings>) => void;
   files?: Record<string, FileSystemItem>;
+  fs?: FileSystemContextType; // Added file system operations
   onNavigate?: (path: string[]) => void;
   onOpenFile?: (file: FileSystemItem) => void;
 }
@@ -43,9 +50,17 @@ export interface FileSystemItem {
 
 export interface UserSettings {
   username: string;
-  themeColor: string;
+  themeColor: string; // 'cyan' | 'purple' | 'green' | 'orange' | 'red' | 'blue'
   wallpaper: string;
-  password?: string; // Stored locally
+  password?: string;
+  bio?: string;
+  brightness: number; // 0-100
+  volume: number; // 0-100
+  wifiEnabled: boolean;
+  bluetoothEnabled: boolean;
+  privacyLocation: boolean;
+  privacyCamera: boolean;
+  darkMode: boolean; // Just a toggle for UI, even if always dark currently
 }
 
 export enum Wallpaper {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppDefinition, WindowState, UserSettings, FileSystemItem } from './types';
+import { AppDefinition, WindowState, UserSettings, FileSystemItem, FileSystemContextType } from './types';
 import { INITIAL_SETTINGS, INITIAL_FILES } from './constants';
 import { Taskbar } from './components/Taskbar';
 import { WindowFrame } from './components/WindowFrame';
@@ -11,7 +11,12 @@ import { SettingsApp } from './components/apps/SettingsApp';
 import { GeminiAssistant } from './components/apps/GeminiAssistant';
 import { TextEditorApp } from './components/apps/TextEditorApp';
 import { ImageViewerApp } from './components/apps/ImageViewerApp';
-import { Globe, Folder, Settings, Cpu, FileText, Image } from 'lucide-react';
+import { CalculatorApp } from './components/apps/CalculatorApp';
+import { TerminalApp } from './components/apps/TerminalApp';
+import { VideoPlayerApp } from './components/apps/VideoPlayerApp';
+import { CalendarApp } from './components/apps/CalendarApp';
+import { ClockApp } from './components/apps/ClockApp';
+import { Globe, Folder, Settings, Cpu, FileText, Image, Calculator, Terminal, Video, Calendar, Clock } from 'lucide-react';
 
 // App Definitions
 const APPS: AppDefinition[] = [
@@ -21,6 +26,11 @@ const APPS: AppDefinition[] = [
   { id: 'assistant', name: 'Cerium AI', icon: Cpu, component: GeminiAssistant, defaultWidth: 400, defaultHeight: 600 },
   { id: 'text-editor', name: 'Text Editor', icon: FileText, component: TextEditorApp, defaultWidth: 600, defaultHeight: 400 },
   { id: 'image-viewer', name: 'Image Editor', icon: Image, component: ImageViewerApp, defaultWidth: 800, defaultHeight: 600 },
+  { id: 'calculator', name: 'Calculator', icon: Calculator, component: CalculatorApp, defaultWidth: 320, defaultHeight: 450 },
+  { id: 'terminal', name: 'Terminal', icon: Terminal, component: TerminalApp, defaultWidth: 600, defaultHeight: 400 },
+  { id: 'video-player', name: 'Video Player', icon: Video, component: VideoPlayerApp, defaultWidth: 800, defaultHeight: 500 },
+  { id: 'calendar', name: 'Calendar', icon: Calendar, component: CalendarApp, defaultWidth: 700, defaultHeight: 500 },
+  { id: 'clock', name: 'Clock', icon: Clock, component: ClockApp, defaultWidth: 500, defaultHeight: 350 },
 ];
 
 export default function App() {
@@ -32,7 +42,25 @@ export default function App() {
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
   const [nextZIndex, setNextZIndex] = useState(10);
 
-  // Load settings from local storage on login
+  // Load state from local storage on mount
+  useEffect(() => {
+    const savedFiles = localStorage.getItem('cerium_files');
+    if (savedFiles) {
+        try {
+            setFiles(JSON.parse(savedFiles));
+        } catch (e) {
+            console.error("Failed to load files", e);
+        }
+    }
+  }, []);
+
+  // Save files whenever they change
+  useEffect(() => {
+      if (isLoggedIn) {
+        localStorage.setItem('cerium_files', JSON.stringify(files));
+      }
+  }, [files, isLoggedIn]);
+
   const handleLogin = (userSettings?: Partial<UserSettings>) => {
      if (userSettings) {
        setSettings(prev => ({ ...prev, ...userSettings }));
@@ -43,8 +71,79 @@ export default function App() {
   const handleUpdateSettings = (newSettings: Partial<UserSettings>) => {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
-    // Persist
+    // Persist user settings
     localStorage.setItem('cerium_user', JSON.stringify(updated));
+  };
+
+  // File System Operations
+  const fs: FileSystemContextType = {
+    createItem: (parentId, name, type, content = '') => {
+        const id = `${type}-${Date.now()}`;
+        const newItem: FileSystemItem = {
+            id,
+            name,
+            type,
+            content,
+            parentId,
+            children: type === 'folder' ? [] : undefined,
+            createdAt: new Date().toISOString()
+        };
+
+        setFiles(prev => {
+            const parent = prev[parentId];
+            if (!parent) return prev;
+            
+            // Check for duplicate names
+            if (parent.children?.some(childId => prev[childId].name === name)) {
+                 // Simple duplicate handling
+                 newItem.name = `${name} (1)`;
+            }
+
+            return {
+                ...prev,
+                [id]: newItem,
+                [parentId]: {
+                    ...parent,
+                    children: [...(parent.children || []), id]
+                }
+            };
+        });
+    },
+    deleteItem: (id) => {
+        setFiles(prev => {
+            const item = prev[id];
+            if (!item || !item.parentId) return prev; // Can't delete root
+            
+            const parent = prev[item.parentId];
+            const newFiles = { ...prev };
+            
+            // Remove from parent's children
+            if (parent && parent.children) {
+                newFiles[item.parentId] = {
+                    ...parent,
+                    children: parent.children.filter(childId => childId !== id)
+                };
+            }
+            
+            // Delete the item (and recursively children if folder)
+            const deleteRecursive = (itemId: string) => {
+                const target = newFiles[itemId];
+                if (target?.children) {
+                    target.children.forEach(deleteRecursive);
+                }
+                delete newFiles[itemId];
+            };
+            
+            deleteRecursive(id);
+            return newFiles;
+        });
+    },
+    renameItem: (id, newName) => {
+        setFiles(prev => ({
+            ...prev,
+            [id]: { ...prev[id], name: newName }
+        }));
+    }
   };
 
   // Window Management Actions
@@ -78,11 +177,8 @@ export default function App() {
     } else if (file.type === 'image') {
       launchApp('image-viewer', file.content);
     } else if (file.type === 'folder') {
-       // Folders on desktop usually open Files app at that path. 
-       // For simplicity, just launch Files app. In full OS, pass path.
-       launchApp('files');
+       launchApp('files'); // Ideally would pass path
     } else {
-      // Default to text editor
       launchApp('text-editor', `Cannot open binary file: ${file.name}`);
     }
   };
@@ -161,8 +257,20 @@ export default function App() {
       className="relative w-screen h-screen overflow-hidden bg-cover bg-center select-none"
       style={{ backgroundImage: `url(${settings.wallpaper})` }}
     >
+      {/* Brightness Overlay */}
+      <div 
+        className="absolute inset-0 bg-black pointer-events-none z-[9999] transition-opacity duration-300" 
+        style={{ opacity: 1 - (settings.brightness / 100) }} 
+      />
+
       {/* Desktop Icons */}
-      <Desktop files={files} apps={APPS} onOpenFile={openFile} />
+      <Desktop 
+         files={files} 
+         apps={APPS} 
+         onOpenFile={openFile} 
+         fs={fs}
+         updateSettings={handleUpdateSettings}
+      />
 
       {/* Window Layer */}
       <div className="absolute inset-0 pb-12 pointer-events-none">
@@ -185,6 +293,7 @@ export default function App() {
                   settings={settings} 
                   updateSettings={handleUpdateSettings}
                   files={files}
+                  fs={fs}
                   onOpenFile={openFile}
                   initialContent={win.content}
                 />
