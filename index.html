@@ -27,6 +27,10 @@
         background: rgba(255, 255, 255, 0.3);
       }
     </style>
+  <script>
+    // Polyfill process to prevent "process is not defined" crashes in browser environments
+    window.process = window.process || { env: {} };
+  </script>
   <script type="importmap">
 {
   "imports": {

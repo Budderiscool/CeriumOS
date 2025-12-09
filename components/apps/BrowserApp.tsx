@@ -15,7 +15,8 @@ interface Tab {
 
 const NEW_TAB_URL = 'cerium://newtab';
 const SEARCH_URL_BASE = 'https://www.google.com/search?q=';
-const PROXY_BASE = 'https://corsproxy.io/?'; // Fallback: 'https://api.allorigins.win/raw?url='
+// Using corsproxy.io as a reliable public proxy for the demo
+const PROXY_BASE = 'https://corsproxy.io/?'; 
 
 export const BrowserApp: React.FC = () => {
   const [tabs, setTabs] = useState<Tab[]>([
@@ -33,11 +34,10 @@ export const BrowserApp: React.FC = () => {
   ]);
   const [activeTabId, setActiveTabId] = useState('1');
   const [inputUrl, setInputUrl] = useState('');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
+  
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
 
-  // Sync input bar
+  // Sync input bar with active tab state
   useEffect(() => {
     if (activeTab.url === NEW_TAB_URL) {
       setInputUrl('');
@@ -78,8 +78,16 @@ export const BrowserApp: React.FC = () => {
   // --- Core Navigation Logic ---
 
   const isUrl = (str: string) => {
-    // Basic heuristics for URL vs Search
-    return str.includes('.') && !str.includes(' ') && !str.startsWith('?');
+    // Regex to detect domain names (e.g., example.com, localhost:3000)
+    // or IP addresses. It checks for a dot, no spaces, and not starting with a query param.
+    // This prevents "cats" from being treated as a URL, but "cats.com" will be.
+    const pattern = new RegExp('^(https?:\\/\\/)?' + // protocol
+      '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
+      '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
+      '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
+      '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
+      '(\\#[-a-z\\d_]*)?$', 'i'); // fragment locator
+    return !!pattern.test(str);
   };
 
   const normalizeUrl = (input: string) => {
@@ -94,38 +102,30 @@ export const BrowserApp: React.FC = () => {
   };
 
   const fetchPageContent = async (url: string): Promise<string> => {
-    // If it's a search URL or explicitly whitelisted for direct access, we might treat it differently,
-    // but for consistency with the "White Screen" fix, we'll try to proxy everything we can 
-    // EXCEPT internal urls.
-    
     if (url === NEW_TAB_URL) return '';
+    if (url.startsWith(SEARCH_URL_BASE)) return '__DIRECT__'; // Use iframe for search results usually
 
-    // Direct mode check for specific sites that might break with proxying or allow framing
-    if (url.includes('bing.com') || url.includes('wikipedia.org')) {
-       // We can return a special marker or handle this in render
-       return `__DIRECT__`;
-    }
+    // Special handling for Wikipedia/Bing which might allow framing or need specific handling
+    // but for this "proxy" feature, we force proxying to ensure styling loads correctly
+    // by rewriting relative paths.
 
     try {
-      const targetUrl = url;
-      // We use the proxy to fetch the raw HTML
-      const response = await fetch(`${PROXY_BASE}${encodeURIComponent(targetUrl)}`);
+      const response = await fetch(`${PROXY_BASE}${encodeURIComponent(url)}`);
       
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       let html = await response.text();
 
       // --- CRITICAL FIX: INJECT BASE TAG ---
-      // This forces all relative links (css, js, images) to resolve against the original URL
-      // instead of the broken iframe environment.
-      const baseTag = `<base href="${targetUrl}" />`;
+      // This forces all relative links (css, js, images) to resolve against the original URL.
+      const baseTag = `<base href="${url}" />`;
       if (html.includes('<head>')) {
         html = html.replace('<head>', `<head>${baseTag}`);
       } else {
         html = `${baseTag}${html}`;
       }
 
-      // Optional: Script injection to handle link clicks within the iframe
+      // Script to intercept clicks and route them through our browser logic
       const scriptFix = `
         <script>
           document.addEventListener('click', function(e) {
@@ -145,12 +145,14 @@ export const BrowserApp: React.FC = () => {
       console.error("Proxy Error:", error);
       return `
         <html>
-          <body style="font-family: sans-serif; padding: 2rem; color: #333;">
-            <h2>Unable to load page</h2>
-            <p>The requested URL <strong>${url}</strong> could not be retrieved.</p>
+          <body style="font-family: sans-serif; padding: 2rem; color: #cbd5e1; background: #0f172a;">
+            <h2 style="color: #ef4444;">Unable to load page</h2>
+            <p>The requested URL <strong>${url}</strong> could not be retrieved via the proxy.</p>
             <p>Reason: ${error.message || 'Network Error'}</p>
-            <hr/>
-            <p><em>Tip: Some websites block access from proxies or iframes.</em></p>
+            <hr style="border-color: #334155; margin: 1rem 0;" />
+            <p><em>Tip: Some websites strictly block access from proxies or external fetch requests.</em></p>
+            <br/>
+            <a href="${url}" target="_blank" style="color: #22d3ee;">Try opening in new real tab</a>
           </body>
         </html>
       `;
@@ -161,8 +163,11 @@ export const BrowserApp: React.FC = () => {
     if (!input) return;
     const url = normalizeUrl(input);
     const display = url.startsWith(SEARCH_URL_BASE) ? input : url;
+    
+    // Determine mode
+    const isSearch = url.startsWith(SEARCH_URL_BASE);
+    const mode = isSearch ? 'direct' : 'proxy';
 
-    // Update History
     const newHistory = [...activeTab.history.slice(0, activeTab.historyIndex + 1), url];
     
     updateTab(activeTabId, {
@@ -171,16 +176,23 @@ export const BrowserApp: React.FC = () => {
       title: 'Loading...',
       loading: true,
       history: newHistory,
-      historyIndex: newHistory.length - 1
+      historyIndex: newHistory.length - 1,
+      mode
     });
 
-    const content = await fetchPageContent(url);
-    
-    updateTab(activeTabId, {
-      loading: false,
-      title: getTitleFromUrl(url),
-      content: content
-    });
+    if (mode === 'proxy') {
+        const content = await fetchPageContent(url);
+        updateTab(activeTabId, {
+            loading: false,
+            title: getTitleFromUrl(url),
+            content: content
+        });
+    } else {
+        // Direct mode (iframe src)
+        setTimeout(() => {
+             updateTab(activeTabId, { loading: false, title: 'Search Result', content: '__DIRECT__' });
+        }, 1000);
+    }
   };
 
   const getTitleFromUrl = (url: string) => {
@@ -193,7 +205,6 @@ export const BrowserApp: React.FC = () => {
   };
 
   const handleMessage = (e: MessageEvent) => {
-    // Handle clicks from inside the iframe (if script injection worked)
     if (e.data && e.data.type === 'LINK_CLICK' && e.data.url) {
       handleNavigate(e.data.url);
     }
@@ -202,23 +213,29 @@ export const BrowserApp: React.FC = () => {
   useEffect(() => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [activeTabId, tabs]); // Re-bind if tabs change to ensure fresh closure state if needed
+  }, [activeTabId, tabs]); 
 
   // Navigation Buttons
   const goBack = () => {
     if (activeTab.historyIndex > 0) {
       const newIndex = activeTab.historyIndex - 1;
       const url = activeTab.history[newIndex];
-      // Re-fetch content for history navigation
-      updateTab(activeTabId, { historyIndex: newIndex, url, loading: true });
-      fetchPageContent(url).then(content => {
-          updateTab(activeTabId, { 
-              loading: false, 
-              title: getTitleFromUrl(url),
-              content,
-              displayUrl: url
+      // Re-trigger navigation logic for the historic URL
+      const isSearch = url.startsWith(SEARCH_URL_BASE);
+      updateTab(activeTabId, { historyIndex: newIndex, url, displayUrl: url, loading: true });
+      
+      if (!isSearch) {
+          fetchPageContent(url).then(content => {
+              updateTab(activeTabId, { 
+                  loading: false, 
+                  title: getTitleFromUrl(url),
+                  content,
+                  mode: 'proxy'
+              });
           });
-      });
+      } else {
+          updateTab(activeTabId, { loading: false, title: 'Search', content: '__DIRECT__', mode: 'direct' });
+      }
     }
   };
 
@@ -226,21 +243,27 @@ export const BrowserApp: React.FC = () => {
     if (activeTab.historyIndex < activeTab.history.length - 1) {
       const newIndex = activeTab.historyIndex + 1;
       const url = activeTab.history[newIndex];
-      updateTab(activeTabId, { historyIndex: newIndex, url, loading: true });
-      fetchPageContent(url).then(content => {
-          updateTab(activeTabId, { 
-              loading: false, 
-              title: getTitleFromUrl(url),
-              content,
-              displayUrl: url
+      const isSearch = url.startsWith(SEARCH_URL_BASE);
+      updateTab(activeTabId, { historyIndex: newIndex, url, displayUrl: url, loading: true });
+      
+      if (!isSearch) {
+          fetchPageContent(url).then(content => {
+              updateTab(activeTabId, { 
+                  loading: false, 
+                  title: getTitleFromUrl(url),
+                  content,
+                  mode: 'proxy'
+              });
           });
-      });
+      } else {
+          updateTab(activeTabId, { loading: false, title: 'Search', content: '__DIRECT__', mode: 'direct' });
+      }
     }
   };
 
   const refresh = () => handleNavigate(activeTab.url);
 
-  // --- New Tab Page ---
+  // --- New Tab Page Component ---
   const NewTabScreen = () => {
     const [term, setTerm] = useState('');
     const time = new Date();
@@ -249,9 +272,9 @@ export const BrowserApp: React.FC = () => {
 
     const shortcuts = [
       { name: 'Google', url: 'https://www.google.com', icon: 'G' },
-      { name: 'Bing', url: 'https://www.bing.com', icon: 'B' }, // Bing allows iframing often
+      { name: 'Bing', url: 'https://www.bing.com', icon: 'B' },
       { name: 'Wikipedia', url: 'https://www.wikipedia.org', icon: 'W' },
-      { name: 'Example', url: 'https://example.com', icon: 'Ex' },
+      { name: 'Vercel', url: 'https://vercel.com', icon: 'V' },
     ];
 
     return (
@@ -262,18 +285,19 @@ export const BrowserApp: React.FC = () => {
             <h1 className="text-5xl font-light text-slate-800 tracking-tight">
               {time.getHours() < 12 ? 'Good morning' : time.getHours() < 18 ? 'Good afternoon' : 'Good evening'}
             </h1>
+            <p className="text-slate-500">{time.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
           </div>
 
-          <div className="w-full relative shadow-2xl shadow-cyan-900/10 rounded-full">
+          <div className="w-full relative shadow-2xl shadow-cyan-900/10 rounded-full group">
             <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-              <Search className="text-slate-400" size={20} />
+              <Search className="text-slate-400 group-focus-within:text-cyan-500 transition-colors" size={20} />
             </div>
             <input 
               type="text"
               value={term}
               onChange={(e) => setTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search the web or type a URL"
+              placeholder="Search or type a URL"
               className="w-full pl-14 pr-6 py-4 bg-white border-0 rounded-full text-lg outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-cyan-500 transition-shadow"
               autoFocus
             />
@@ -286,7 +310,7 @@ export const BrowserApp: React.FC = () => {
                 onClick={() => handleNavigate(s.url)}
                 className="flex flex-col items-center gap-3 group"
               >
-                <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center text-slate-700 font-bold text-xl group-hover:scale-110 group-hover:shadow-md transition-all">
+                <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center text-slate-700 font-bold text-xl group-hover:scale-110 group-hover:shadow-md transition-all group-hover:border-cyan-200">
                   {s.icon}
                 </div>
                 <span className="text-sm font-medium text-slate-600 group-hover:text-cyan-600 transition-colors">{s.name}</span>
@@ -354,7 +378,7 @@ export const BrowserApp: React.FC = () => {
             onKeyDown={(e) => e.key === 'Enter' && handleNavigate(inputUrl)}
             onFocus={(e) => e.target.select()}
             className="flex-1 bg-transparent outline-none text-slate-200 placeholder:text-slate-600"
-            placeholder="Search or enter address"
+            placeholder="Search or enter URL"
           />
         </div>
 
@@ -378,7 +402,7 @@ export const BrowserApp: React.FC = () => {
         {activeTab.url === NEW_TAB_URL ? (
            <NewTabScreen />
         ) : (
-           activeTab.content === '__DIRECT__' ? (
+           activeTab.mode === 'direct' || activeTab.content === '__DIRECT__' ? (
              <iframe 
                src={activeTab.url}
                className="w-full h-full border-none bg-white"
@@ -391,7 +415,6 @@ export const BrowserApp: React.FC = () => {
                 className="w-full h-full border-none bg-white"
                 title="Proxy View"
                 // No sandbox needed for srcDoc usually, but good for safety. 
-                // We must be careful not to block valid scripts from the proxied page.
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             />
            )
